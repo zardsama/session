@@ -1,0 +1,20 @@
+{
+    "name": "zardsama/session",
+    "description": "db session library",
+    "license": "None",
+    "authors": [
+        {
+            "name": "zardsama",
+            "email": "zardsama@naver.com"
+        }
+    ],
+    "autoload": {
+        "psr-4": {
+            "zardsama\\session\\": "src/"
+        }
+    },
+    "minimum-stability": "stable",
+    "require": {
+        "zardsama/pdo": ">=0.1"
+	}
+}
