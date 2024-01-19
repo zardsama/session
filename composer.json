@@ -1,7 +1,7 @@
 {
     "name": "zardsama/session",
     "description": "db session library",
-    "license": "None",
+    "license": "Apache-2.0",
     "authors": [
         {
             "name": "zardsama",
@@ -13,8 +13,11 @@
             "zardsama\\session\\": "src/"
         }
     },
-    "minimum-stability": "stable",
+    "repositories": [{
+        "type": "composer",
+        "url": "https://www.zardsama.net/satis/web"
+    }],
     "require": {
-        "zardsama/pdo": ">=0.1"
-	}
+        "zardsama/qb-extend": "^0.1.0"
+    }
 }
