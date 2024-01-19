@@ -17,7 +17,7 @@ abstract class SessionHandler
      * @param string|null $session_name
      * @return void
      */
-	protected function init(string | null $session_name) : void
+    protected function init(string | null $session_name) : void
     {
         if (ini_get('session.auto_start') == 1) {
             session_write_close();
@@ -43,12 +43,12 @@ abstract class SessionHandler
             'httponly' => false,
         ]);
 
-        session_start();
         if ($session_name) {
             session_name($session_name);
         }
+        session_start();
         $this->session_name = session_name();
-	}
+    }
 
     /**
      * 세션 내용 분석
@@ -57,21 +57,21 @@ abstract class SessionHandler
      */
     public function unserialize(string $session_data) : array
     {
-         $return_data = [];
-         $offset = 0;
-         while ($offset < strlen($session_data)) {
-             if (!strstr(substr($session_data, $offset), "|")) {
-                 return [];
-             }
-             $pos = strpos($session_data, "|", $offset);
-             $num = $pos - $offset;
-             $var_name = substr($session_data, $offset, $num);
-             $offset += $num + 1;
-             $data = unserialize(substr($session_data, $offset));
-             $return_data[$var_name] = $data;
-             $offset += strlen(serialize($data));
-         }
-         return $return_data;
+        $return_data = [];
+        $offset = 0;
+        while ($offset < strlen($session_data)) {
+            if (!strstr(substr($session_data, $offset), "|")) {
+                return [];
+            }
+            $pos = strpos($session_data, "|", $offset);
+            $num = $pos - $offset;
+            $var_name = substr($session_data, $offset, $num);
+            $offset += $num + 1;
+            $data = unserialize(substr($session_data, $offset));
+            $return_data[$var_name] = $data;
+            $offset += strlen(serialize($data));
+        }
+        return $return_data;
     }
 
     /**

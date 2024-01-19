@@ -26,7 +26,7 @@ class MySQLSession extends SessionHandler
         $this->qb = &$qb;
         $this->table = $table;
 
-        if ($this->qb->query("show tables like `$table`")->count() == 0) {
+        if (count($this->qb->query("show tables like '{$table}'")->get()) == 0) {
             $this->createTable();
         }
 
@@ -66,19 +66,13 @@ class MySQLSession extends SessionHandler
             $_SERVER['REQUEST_URI'] = 'localhost';
         }
 
-        $count = $this->qb->table($this->table)
-            ->where('session_id', $id)
-            ->count();
-        if ($count > 0) {
+        try {
             $this->qb->table($this->table)
-                ->where('session_id', $id)
-                ->update([
+                ->onDuplicateKeyUpdate([
                     'data' => $data,
                     'page' => $_SERVER['REQUEST_URI'],
                     'access_time' => $this->qb->raw('now()')
-                ]);
-        } else {
-            $this->qb->table($this->table)
+                ])
                 ->insert([
                     'session_id' => $id,
                     'data' => $data,
@@ -87,6 +81,9 @@ class MySQLSession extends SessionHandler
                     'reg_date' => $this->qb->raw('now()'),
                     'access_time' => $this->qb->raw('now()')
                 ]);
+        } catch (Exception $e) {
+            print_r($e);
+            return true;
         }
 
         return true;
@@ -142,7 +139,7 @@ class MySQLSession extends SessionHandler
      */
     private function createTable() : void
     {
-        $this->qb->query("
+        $r = $this->qb->query("
             CREATE TABLE `$this->table` (
                 `session_id` VARCHAR(64) NOT NULL COLLATE 'utf8_general_ci',
                 `data` TEXT NOT NULL COLLATE 'utf8_general_ci',
@@ -151,7 +148,7 @@ class MySQLSession extends SessionHandler
                 `reg_date` DATETIME NOT NULL,
                 `access_time` DATETIME NOT NULL,
                 PRIMARY KEY (`session_id`) USING BTREE,
-                INDEX `accesstime` (`accesstime`) USING BTREE
+                INDEX `access_time` (`access_time`) USING BTREE
             )
             COMMENT='session table'
             COLLATE='utf8_general_ci'
