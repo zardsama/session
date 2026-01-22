@@ -2,7 +2,8 @@
 
 namespace zardsama\session;
 
-use zardsama\pdo\PDODatabase;
+use zardsama\QBExtend\QBHandlerExtend;
+use Pecee\Pixie\Exception;
 
 /*
 * MySQL DB 세션 핸들러 클래스
@@ -10,110 +11,149 @@ use zardsama\pdo\PDODatabase;
 
 class MySQLSession extends SessionHandler
 {
-    const TABLE = 'session';
-    private $db;
+    private QBHandlerExtend $qb;
+    private string $table;
 
-    public function __construct(&$db)
+    /**
+     * constructor
+     * @param QBHandlerExtend $qb
+     * @param string $table 테이블명
+     * @param string $session_name 세션명
+     * @throws Exception
+     */
+    public function __construct(QBHandlerExtend $qb, string $table, string $session_name = 'PHPSESSID')
     {
-        $this->db = $db;
-        if ($this->db->rowCount('SHOW TABLES LIKE '.SELF::TABLE) == 0) {
+        $this->qb = &$qb;
+        $this->table = $table;
+
+        if (count($this->qb->query("show tables like '$table'")->get()) == 0) {
             $this->createTable();
         }
-        $this->init();
+
+        $this->init($session_name);
     }
 
-    public function open($savePath, $sessionName)
+
+    public function open(string $path, string $name): bool
     {
         return true;
     }
 
-    public function close() {
+    public function close() : bool
+    {
         return true;
     }
 
-    public function read($id, $field = 'data')
+    /**
+     * @throws Exception
+     */
+    public function read(string $id) : string|false
     {
-        $session = $this->db->row("select $field from ".SELF::TABLE." where session_id='$id'");
-        if ($session == false) $session = '';
-
-        return $session;
+        $data = $this->qb->table($this->table)
+            ->where('session_id', $id)
+            ->single('data');
+        return $data === null ? '' : $data;
     }
 
-    public function write($id, $data)
+    public function write(string $id, string $data) : bool
     {
-        $serialized = $this->unserialize($data);
-        if (empty($_SERVER['REMOTE_ADDR']) == true) {
+        if (empty($_SERVER['REMOTE_ADDR'])) {
             $_SERVER['REMOTE_ADDR'] = '0.0.0.0';
         }
-        if (empty($_SERVER['REQUEST_URI']) == true) {
+        if (empty($_SERVER['REQUEST_URI'])) {
             $_SERVER['REQUEST_URI'] = 'localhost';
         }
 
-        if ($this->db->row("select count(*) from ".SELF::TABLE." where session_id='$id'") > 0)
-        {
-            $result = $this->db->query("
-                update ".SELF::TABLE." set
-                    accesstime=now(), data=?, page=?
-                    where session_id='$id'
-            ", array(
-                $data, $_SERVER['REQUEST_URI']
-            ));
-        } else {
-            $result = $this->db->query("
-                insert into ".SELF::TABLE." (session_id, data, remote_addr, page, regdate, accesstime)
-                values ('$id', ?, ?, ?, now(), now())"
-            , array(
-                $data, $_SERVER['REMOTE_ADDR'], $_SERVER['REQUEST_URI']
-            ));
+        try {
+            $this->qb->table($this->table)
+                ->onDuplicateKeyUpdate([
+                    'data' => $data,
+                    'page' => $_SERVER['REQUEST_URI'],
+                    'access_time' => $this->qb->raw('now()')
+                ])
+                ->insert([
+                    'session_id' => $id,
+                    'data' => $data,
+                    'remote_addr' => $_SERVER['REMOTE_ADDR'],
+                    'page' => $_SERVER['REQUEST_URI'],
+                    'reg_date' => $this->qb->raw('now()'),
+                    'access_time' => $this->qb->raw('now()')
+                ]);
+        } catch (Exception $e) {
+            print_r($e);
+            return true;
         }
-        return ($result != null);
-    }
 
-    public function destroy($id)
-    {
-        $result = @$this->db->query("delete from ".SELF::TABLE." where session_id='$id'");
         return true;
     }
 
-    public function gc($maxlifetime)
+    /**
+     * @throws Exception
+     */
+    public function destroy(string $id) : bool
     {
-        $expire_time = time()-$maxlifetime;
-        $result = @$this->db->query("delete from ".SELF::TABLE." where accesstime < '$expire_time'");
+        $this->qb->table($this->table)
+            ->where('session_id', $id)
+            ->delete();
         return true;
     }
 
-    public function exists($id) {
-        $r = $this->db->row("select count(*) from ".SELF::TABLE." where session_id=:id", array(
-            ':id' => $id
-        ));
-        return ($r > 0);
+    /**
+     * @throws Exception
+     */
+    public function gc(int $max_lifetime) : int|false
+    {
+        return $this->qb->table($this->table)
+            ->where('access_time', '<', $this->qb->raw('date_sub(NOW(), INTERVAL ' . $max_lifetime . ' SECOND)'))
+            ->delete()
+            ->rowCount();
     }
 
-    public function parse($id) {
-        $data = $this->db->row("select data from ".SELF::TABLE." where session_id=:id", array(
-            ':id' => $id
-        ));
+    /**
+     * @throws Exception
+     */
+    public function exists($id): bool
+    {
+        return (
+            $this->qb->table($this->table)
+                ->where('session_id', $id)
+                ->count() > 0
+        );
+    }
+
+    /**
+     * @throws Exception
+     */
+    public function parse($id): array
+    {
+        $data = $this->qb->table($this->table)
+            ->where('session_id', $id)
+            ->single('data');
         return $this->unserialize($data);
     }
 
-    private function createTable() {
-        $this->db->query("
-        CREATE TABLE `".SELF::TABLE."` (
-            `session_id` VARCHAR(64) NOT NULL COLLATE 'utf8_general_ci',
-            `data` TEXT NOT NULL COLLATE 'utf8_general_ci',
-            `remote_addr` VARCHAR(15) NOT NULL COLLATE 'utf8_general_ci',
-            `page` VARCHAR(100) NOT NULL COLLATE 'utf8_general_ci',
-            `regdate` DATETIME NOT NULL,
-            `accesstime` DATETIME NOT NULL,
-            PRIMARY KEY (`session_id`) USING BTREE,
-            INDEX `accesstime` (`accesstime`) USING BTREE
-        )
-        COMMENT='세션'
-        COLLATE='utf8_general_ci'
-        ENGINE=InnoDB;
-        ");
+    private function createTable(): bool
+    {
+        try {
+            $this->qb->query("
+                CREATE TABLE `$this->table` (
+                    `session_id` VARCHAR(64) NOT NULL COLLATE 'utf8_general_ci',
+                    `data` TEXT NOT NULL COLLATE 'utf8_general_ci',
+                    `remote_addr` VARCHAR(15) NOT NULL COLLATE 'utf8_general_ci',
+                    `page` VARCHAR(100) NOT NULL COLLATE 'utf8_general_ci',
+                    `reg_date` DATETIME NOT NULL,
+                    `access_time` DATETIME NOT NULL,
+                    PRIMARY KEY (`session_id`) USING BTREE,
+                    INDEX `access_time` (`access_time`) USING BTREE
+                )
+                COMMENT='session table'
+                COLLATE='utf8_general_ci'
+                ENGINE=InnoDB;
+            ");
+        } catch (Exception) {
+            return false;
+        }
+        return true;
     }
 
 }
-
-?>
