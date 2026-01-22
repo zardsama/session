@@ -2,8 +2,8 @@
 
 namespace zardsama\session;
 
-use zardsama\QBExtend\QBHandlerExtend;
-use Pecee\Pixie\Exception;
+use Illuminate\Database\Connection;
+use Illuminate\Database\QueryException;
 
 /*
 * MySQL DB 세션 핸들러 클래스
@@ -11,25 +11,26 @@ use Pecee\Pixie\Exception;
 
 class MySQLSession extends SessionHandler
 {
-    private QBHandlerExtend $qb;
+    private Connection $qb;
     private string $table;
 
     /**
      * constructor
-     * @param QBHandlerExtend $qb
+     * @param Connection $qb
      * @param string $table 테이블명
      * @param string $session_name 세션명
-     * @throws Exception
+     * @throws QueryException;
      */
-    public function __construct(QBHandlerExtend $qb, string $table, string $session_name = 'PHPSESSID')
+    public function __construct(Connection $qb, string $table, string $session_name = 'PHPSESSID')
     {
         $this->qb = &$qb;
         $this->table = $table;
 
-        if (count($this->qb->query("show tables like '$table'")->get()) == 0) {
-            $this->createTable();
+        if (!count($this->qb->select("show tables like '$table'"))) {
+            if (!$this->createTable()) {
+                exit('Session table create error.');
+            }
         }
-
         $this->init($session_name);
     }
 
@@ -45,17 +46,17 @@ class MySQLSession extends SessionHandler
     }
 
     /**
-     * @throws Exception
+     * @throws QueryException
      */
     public function read(string $id) : string|false
     {
         $data = $this->qb->table($this->table)
             ->where('session_id', $id)
-            ->single('data');
+            ->first('data')->data ?? null;
         return $data === null ? '' : $data;
     }
 
-    public function write(string $id, string $data) : bool
+    public function write(string $id, string $data): bool
     {
         if (empty($_SERVER['REMOTE_ADDR'])) {
             $_SERVER['REMOTE_ADDR'] = '0.0.0.0';
@@ -66,29 +67,28 @@ class MySQLSession extends SessionHandler
 
         try {
             $this->qb->table($this->table)
-                ->onDuplicateKeyUpdate([
-                    'data' => $data,
-                    'page' => $_SERVER['REQUEST_URI'],
-                    'access_time' => $this->qb->raw('now()')
-                ])
-                ->insert([
-                    'session_id' => $id,
-                    'data' => $data,
-                    'remote_addr' => $_SERVER['REMOTE_ADDR'],
-                    'page' => $_SERVER['REQUEST_URI'],
-                    'reg_date' => $this->qb->raw('now()'),
-                    'access_time' => $this->qb->raw('now()')
-                ]);
-        } catch (Exception $e) {
-            print_r($e);
+                ->updateOrInsert(
+                    [
+                        'session_id' => $id,
+                    ], [
+                        'data' => $data,
+                        'remote_addr' => $_SERVER['REMOTE_ADDR'],
+                        'page' => $_SERVER['REQUEST_URI'],
+                        'reg_date' => $this->qb->raw('now()'),
+                        'access_time' => $this->qb->raw('now()')
+                    ]
+                );
+        } catch (QueryException $e) {
+            echo $e->getMessage();
+            echo PHP_EOL;
+            echo $e->getRawSql();
             return true;
         }
-
         return true;
     }
 
     /**
-     * @throws Exception
+     * @throws QueryException
      */
     public function destroy(string $id) : bool
     {
@@ -99,18 +99,17 @@ class MySQLSession extends SessionHandler
     }
 
     /**
-     * @throws Exception
+     * @throws QueryException
      */
     public function gc(int $max_lifetime) : int|false
     {
         return $this->qb->table($this->table)
             ->where('access_time', '<', $this->qb->raw('date_sub(NOW(), INTERVAL ' . $max_lifetime . ' SECOND)'))
-            ->delete()
-            ->rowCount();
+            ->delete();
     }
 
     /**
-     * @throws Exception
+     * @throws QueryException
      */
     public function exists($id): bool
     {
@@ -122,20 +121,20 @@ class MySQLSession extends SessionHandler
     }
 
     /**
-     * @throws Exception
+     * @throws QueryException
      */
     public function parse($id): array
     {
         $data = $this->qb->table($this->table)
             ->where('session_id', $id)
-            ->single('data');
+            ->first('data')->data;
         return $this->unserialize($data);
     }
 
     private function createTable(): bool
     {
         try {
-            $this->qb->query("
+            $this->qb->select("
                 CREATE TABLE `$this->table` (
                     `session_id` VARCHAR(64) NOT NULL COLLATE 'utf8_general_ci',
                     `data` TEXT NOT NULL COLLATE 'utf8_general_ci',
@@ -150,7 +149,7 @@ class MySQLSession extends SessionHandler
                 COLLATE='utf8_general_ci'
                 ENGINE=InnoDB;
             ");
-        } catch (Exception) {
+        } catch (QueryException) {
             return false;
         }
         return true;

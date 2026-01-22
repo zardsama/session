@@ -20,6 +20,6 @@
     "require": {
         "php": "^8.4",
         "ext-redis": "*",
-        "zardsama/qb-extend": "^0.1.0"
+        "illuminate/database": "^12.48"
     }
 }
