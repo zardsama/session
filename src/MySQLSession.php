@@ -26,7 +26,7 @@ class MySQLSession extends SessionHandler
         $this->qb = &$qb;
         $this->table = $table;
 
-        if (count($this->qb->query("show tables like '{$table}'")->get()) == 0) {
+        if (count($this->qb->query("show tables like '$table'")->get()) == 0) {
             $this->createTable();
         }
 
@@ -47,17 +47,15 @@ class MySQLSession extends SessionHandler
     /**
      * @throws Exception
      */
-    public function read($id) : string
+    public function read(string $id) : string|false
     {
-        return $this->qb->table($this->table)
+        $data = $this->qb->table($this->table)
             ->where('session_id', $id)
             ->single('data');
+        return $data === null ? '' : $data;
     }
 
-    /**
-     * @throws Exception
-     */
-    public function write($id, $data) : bool
+    public function write(string $id, string $data) : bool
     {
         if (empty($_SERVER['REMOTE_ADDR'])) {
             $_SERVER['REMOTE_ADDR'] = '0.0.0.0';
@@ -134,26 +132,28 @@ class MySQLSession extends SessionHandler
         return $this->unserialize($data);
     }
 
-    /**
-     * @throws Exception
-     */
-    private function createTable() : void
+    private function createTable(): bool
     {
-        $r = $this->qb->query("
-            CREATE TABLE `$this->table` (
-                `session_id` VARCHAR(64) NOT NULL COLLATE 'utf8_general_ci',
-                `data` TEXT NOT NULL COLLATE 'utf8_general_ci',
-                `remote_addr` VARCHAR(15) NOT NULL COLLATE 'utf8_general_ci',
-                `page` VARCHAR(100) NOT NULL COLLATE 'utf8_general_ci',
-                `reg_date` DATETIME NOT NULL,
-                `access_time` DATETIME NOT NULL,
-                PRIMARY KEY (`session_id`) USING BTREE,
-                INDEX `access_time` (`access_time`) USING BTREE
-            )
-            COMMENT='session table'
-            COLLATE='utf8_general_ci'
-            ENGINE=InnoDB;
-        ");
+        try {
+            $this->qb->query("
+                CREATE TABLE `$this->table` (
+                    `session_id` VARCHAR(64) NOT NULL COLLATE 'utf8_general_ci',
+                    `data` TEXT NOT NULL COLLATE 'utf8_general_ci',
+                    `remote_addr` VARCHAR(15) NOT NULL COLLATE 'utf8_general_ci',
+                    `page` VARCHAR(100) NOT NULL COLLATE 'utf8_general_ci',
+                    `reg_date` DATETIME NOT NULL,
+                    `access_time` DATETIME NOT NULL,
+                    PRIMARY KEY (`session_id`) USING BTREE,
+                    INDEX `access_time` (`access_time`) USING BTREE
+                )
+                COMMENT='session table'
+                COLLATE='utf8_general_ci'
+                ENGINE=InnoDB;
+            ");
+        } catch (Exception) {
+            return false;
+        }
+        return true;
     }
 
 }
