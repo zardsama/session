@@ -18,8 +18,10 @@
         "url": "https://www.zardsama.net/satis/web"
     }],
     "require": {
-        "php": "^8.4",
-        "ext-redis": "*",
+        "php": "^8.2",
         "illuminate/database": "^12.48"
+    },
+    "suggest": {
+        "ext-redis": "*"
     }
 }
